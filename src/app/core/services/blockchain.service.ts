@@ -1,0 +1,114 @@
+import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+// =====================================================
+// RESPUESTA DE UN BLOQUE DE BLOCKCHAIN
+// =====================================================
+
+export interface BlockchainAuditResponse {
+  id: number;
+
+  uuid: string;
+
+  fecha: string;
+
+  usuario: string;
+
+  accion: string;
+
+  descripcion: string;
+
+  hashAnterior: string;
+
+  hashActual: string;
+
+  version: string;
+
+  algoritmo: string;
+
+  nonce: number;
+
+  firmaHmac: string;
+}
+
+// =====================================================
+// RESPUESTA PAGINADA DE SPRING DATA
+// =====================================================
+
+export interface BlockchainPage {
+  content: BlockchainAuditResponse[];
+
+  totalPages: number;
+
+  totalElements: number;
+
+  size: number;
+
+  number: number;
+
+  numberOfElements: number;
+
+  first: boolean;
+
+  last: boolean;
+
+  empty: boolean;
+}
+
+// =====================================================
+// SERVICE
+// =====================================================
+
+@Injectable({
+  providedIn: 'root',
+})
+export class BlockchainService {
+  private http = inject(HttpClient);
+
+  private url = `${environment.apiUrl}/blockchain`;
+
+  // ===================================================
+  // LISTAR BLOQUES
+  // ===================================================
+
+  listar(
+    pagina: number = 0,
+    cantidad: number = 5,
+    usuario: string = '',
+    accion: string = '',
+  ): Observable<BlockchainPage> {
+    let params = new HttpParams().set('page', pagina).set('size', cantidad);
+
+    if (usuario) {
+      params = params.set('usuario', usuario);
+    }
+
+    if (accion) {
+      params = params.set('accion', accion);
+    }
+
+    return this.http.get<BlockchainPage>(this.url, {
+      params,
+    });
+  }
+
+  // ===================================================
+  // VERIFICAR CADENA
+  // ===================================================
+
+  verificar(): Observable<{ valida: boolean; anomalias: any[] }> {
+    return this.http.get<{ valida: boolean; anomalias: any[] }>(this.url + '/verificar');
+  }
+
+  // ===================================================
+  // RECONCILIAR Y RESELLAR INTEGRIDAD
+  // ===================================================
+
+  reconciliar(motivo?: string): Observable<{ valida: boolean; mensaje: string; message?: string; [key: string]: any }> {
+    return this.http.post<{ valida: boolean; mensaje: string; message?: string; [key: string]: any }>(
+      `${this.url}/reconciliar`,
+      { motivo: motivo || 'Reconciliación forense y remediación autorizada por administración.' }
+    );
+  }
+}
