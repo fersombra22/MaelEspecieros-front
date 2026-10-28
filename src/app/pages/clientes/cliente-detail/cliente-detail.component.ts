@@ -11,6 +11,7 @@ import { Cliente } from '../../../core/models/cliente';
 })
 export class ClienteDetailComponent {
   @Input() cliente?: Cliente;
+  @Input() isAdmin: boolean = false;
   @Output() cerrar = new EventEmitter<void>();
   @Output() editar = new EventEmitter<Cliente>();
   @Output() toggleEstado = new EventEmitter<Cliente>();

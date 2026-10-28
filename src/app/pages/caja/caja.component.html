@@ -40,7 +40,7 @@
   <!-- ========================= -->
   <!-- ESTADO ACTUAL DE CAJA     -->
   <!-- ========================= -->
-  <section *ngIf="!cargando && estadoActual" class="caja-status-section">
+  <section *ngIf="estadoActual" class="caja-status-section">
 
     <!-- CASO: CAJA ABIERTA -->
     <div *ngIf="estadoActual.abierta && estadoActual.caja" class="card-caja-activa">
@@ -56,7 +56,14 @@
           </span>
         </div>
 
-        <div class="status-right">
+        <div class="status-right" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <!-- Badge tiempo real para ROOT -->
+          <div *ngIf="esRoot" class="badge-root-realtime" title="Monitoreo en vivo cada 4s para usuario Root">
+            <span class="live-dot-green pulse"></span>
+            <span class="live-text-root">ROOT TIEMPO REAL</span>
+            <span class="live-clock">{{ ultimaActualizacionEnVivo | date:'HH:mm:ss' }}</span>
+          </div>
+
           <div class="cajero-badge">
             <i class="fa-solid fa-user-circle"></i>
             <span>{{ estadoActual.caja.usuarioNombreCompleto || estadoActual.caja.usuarioUsername || 'Cajero' }}</span>
@@ -64,29 +71,43 @@
         </div>
       </div>
 
-      <!-- Métricas del Turno (Stats Grid VIP con desglose completo) -->
+      <!-- Métricas del Turno (Stats Grid VIP con monitoreo en tiempo real) -->
       <div class="stats-grid">
-        <!-- Monto Inicial -->
-        <div class="stat-card">
+        <!-- 1. Monto Inicial (Plata de inicio en caja) -->
+        <div class="stat-card" [class.stat-card-root]="esRoot">
           <div class="stat-icon stat-inicial">
             <i class="fa-solid fa-wallet"></i>
           </div>
           <div class="stat-info">
-            <span class="stat-label">Fondo Inicial</span>
+            <span class="stat-label">Plata Inicio en Caja</span>
             <h3 class="stat-value">
               ${{ estadoActual.caja.montoInicial | number:'1.2-2':'es-AR' }}
             </h3>
-            <span class="stat-hint">Cambio inicial en gaveta</span>
+            <span class="stat-hint">Fondo de cambio de apertura</span>
           </div>
         </div>
 
-        <!-- Ventas en Efectivo -->
-        <div class="stat-card">
+        <!-- 2. Efectivo Total en Gaveta (Físico en Caja en Tiempo Real) -->
+        <div class="stat-card stat-card-efectivo-total" [class.stat-card-root]="esRoot">
+          <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+            <i class="fa-solid fa-cash-register"></i>
+          </div>
+          <div class="stat-info">
+            <span class="stat-label" style="color: #10b981; font-weight: 700;">Efectivo Total en Caja</span>
+            <h3 class="stat-value text-success" style="font-weight: 800;">
+              ${{ efectivoEsperado | number:'1.2-2':'es-AR' }}
+            </h3>
+            <span class="stat-hint text-success-hint">Plata física actual en gaveta</span>
+          </div>
+        </div>
+
+        <!-- 3. Ventas en Efectivo -->
+        <div class="stat-card" [class.stat-card-root]="esRoot">
           <div class="stat-icon stat-efectivo">
             <i class="fa-solid fa-money-bill-wave"></i>
           </div>
           <div class="stat-info">
-            <span class="stat-label">Ventas Efectivo</span>
+            <span class="stat-label">Ventas en Efectivo</span>
             <h3 class="stat-value text-efectivo">
               ${{ (estadoActual.totalEfectivoActual || 0) | number:'1.2-2':'es-AR' }}
             </h3>
@@ -94,8 +115,22 @@
           </div>
         </div>
 
-        <!-- Tarjetas Débito y Crédito -->
-        <div class="stat-card">
+        <!-- 4. Transferencias (Mercado Pago / Bancos) -->
+        <div class="stat-card" [class.stat-card-root]="esRoot">
+          <div class="stat-icon stat-transferencias">
+            <i class="fa-solid fa-mobile-screen-button"></i>
+          </div>
+          <div class="stat-info">
+            <span class="stat-label">Transferencias</span>
+            <h3 class="stat-value text-transferencia">
+              ${{ (estadoActual.totalTransferenciaActual || 0) | number:'1.2-2':'es-AR' }}
+            </h3>
+            <span class="stat-hint">Mercado Pago / Bancos (Neto: ${{ totalTransferenciasNeto | number:'1.2-2':'es-AR' }})</span>
+          </div>
+        </div>
+
+        <!-- 5. Tarjetas Débito y Crédito -->
+        <div class="stat-card" [class.stat-card-root]="esRoot">
           <div class="stat-icon stat-tarjetas">
             <i class="fa-solid fa-credit-card"></i>
           </div>
@@ -108,22 +143,8 @@
           </div>
         </div>
 
-        <!-- Transferencias -->
-        <div class="stat-card">
-          <div class="stat-icon stat-transferencias">
-            <i class="fa-solid fa-mobile-screen-button"></i>
-          </div>
-          <div class="stat-info">
-            <span class="stat-label">Transferencias</span>
-            <h3 class="stat-value text-transferencia">
-              ${{ (estadoActual.totalTransferenciaActual || 0) | number:'1.2-2':'es-AR' }}
-            </h3>
-            <span class="stat-hint">Mercado Pago / Bancos</span>
-          </div>
-        </div>
-
-        <!-- Total Facturado Turno -->
-        <div class="stat-card stat-card-highlight">
+        <!-- 6. Total Facturado Ventas -->
+        <div class="stat-card stat-card-highlight" [class.stat-card-root]="esRoot">
           <div class="stat-icon stat-esperado">
             <i class="fa-solid fa-vault"></i>
           </div>
@@ -136,8 +157,8 @@
           </div>
         </div>
 
-        <!-- Egresos / Retiros del Turno -->
-        <div class="stat-card">
+        <!-- 7. Egresos / Retiros del Turno -->
+        <div class="stat-card" [class.stat-card-root]="esRoot">
           <div class="stat-icon" style="background: rgba(231, 76, 60, 0.12); color: #e74c3c;">
             <i class="fa-solid fa-arrow-up-from-bracket"></i>
           </div>
@@ -147,6 +168,20 @@
               ${{ (estadoActual.totalEgresosActual || 0) | number:'1.2-2':'es-AR' }}
             </h3>
             <span class="stat-hint">Efvo: ${{ (estadoActual.totalEgresosEfectivoActual || 0) | number:'1.2-2':'es-AR' }} | Transf: ${{ (estadoActual.totalEgresosTransferenciaActual || 0) | number:'1.2-2':'es-AR' }}</span>
+          </div>
+        </div>
+
+        <!-- 8. Total Rendido Consolidado del Turno -->
+        <div class="stat-card" style="border-color: rgba(139, 92, 246, 0.35); background: rgba(139, 92, 246, 0.06);" [class.stat-card-root]="esRoot">
+          <div class="stat-icon" style="background: rgba(139, 92, 246, 0.18); color: #8b5cf6;">
+            <i class="fa-solid fa-scale-balanced"></i>
+          </div>
+          <div class="stat-info">
+            <span class="stat-label" style="color: #a78bfa; font-weight: 700;">Total Rendido Turno</span>
+            <h3 class="stat-value" style="color: #c4b5fd;">
+              ${{ totalConsolidadoEsperado | number:'1.2-2':'es-AR' }}
+            </h3>
+            <span class="stat-hint">Efectivo en gaveta + Pagos digitales</span>
           </div>
         </div>
       </div>
@@ -217,27 +252,104 @@
       </div>
     </div>
 
-    <!-- CASO: CAJA CERRADA -->
-    <div *ngIf="!estadoActual.abierta" class="card-caja-cerrada">
-      <div class="cerrada-icon-wrapper">
-        <i class="fa-solid fa-lock"></i>
+    <!-- CASO: CAJA CERRADA (CON MONITOREO DE PLATA INMEDIATO PARA ROOT Y ADMINS) -->
+    <div *ngIf="!estadoActual.abierta" class="caja-cerrada-wrapper">
+
+      <!-- TARJETA EJECUTIVA DE PLATA PARA USUARIO ROOT (VISIBLE DE INMEDIATO) -->
+      <div *ngIf="esRoot && ultimoTurnoCerrado" class="card-root-ultimo-turno">
+        <div class="root-top-bar">
+          <div class="root-badge-status">
+            <span class="live-dot-green pulse"></span>
+            <span class="live-text-root">MONITOREO ROOT &bull; DINERO DEL ÚLTIMO CIERRE</span>
+          </div>
+          <span class="root-meta-turno">
+            Turno #{{ ultimoTurnoCerrado.id }} &bull; Cerrado el {{ ultimoTurnoCerrado.fechaCierre | date:'dd/MM/yyyy HH:mm' }} &bull; Cajero: {{ ultimoTurnoCerrado.usuarioNombreCompleto || ultimoTurnoCerrado.usuarioUsername || 'Cajero' }}
+          </span>
+        </div>
+
+        <div class="stats-grid" style="margin-top: 16px;">
+          <!-- Plata Inicial -->
+          <div class="stat-card stat-card-root">
+            <div class="stat-icon stat-inicial">
+              <i class="fa-solid fa-wallet"></i>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Plata Inicio del Turno</span>
+              <h3 class="stat-value">
+                ${{ (ultimoTurnoCerrado.montoInicial || 0) | number:'1.2-2':'es-AR' }}
+              </h3>
+              <span class="stat-hint">Fondo inicial de apertura</span>
+            </div>
+          </div>
+
+          <!-- Total Facturado -->
+          <div class="stat-card stat-card-root">
+            <div class="stat-icon stat-ventas">
+              <i class="fa-solid fa-cart-shopping"></i>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Total Ventas Facturadas</span>
+              <h3 class="stat-value text-ventas">
+                ${{ (ultimoTurnoCerrado.montoVentas || 0) | number:'1.2-2':'es-AR' }}
+              </h3>
+              <span class="stat-hint">Ventas consolidadas</span>
+            </div>
+          </div>
+
+          <!-- Efectivo Rendido en Cierre -->
+          <div class="stat-card stat-card-efectivo-total stat-card-root">
+            <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+              <i class="fa-solid fa-cash-register"></i>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label" style="color: #10b981; font-weight: 700;">Plata Rendida en Cierre</span>
+              <h3 class="stat-value text-success" style="font-weight: 800;">
+                ${{ (ultimoTurnoCerrado.montoFinal || 0) | number:'1.2-2':'es-AR' }}
+              </h3>
+              <span class="stat-hint text-success-hint">Valores totales entregados en arqueo</span>
+            </div>
+          </div>
+
+          <!-- Cuadre de Arqueo -->
+          <div class="stat-card stat-card-root" style="border-color: rgba(139, 92, 246, 0.35); background: rgba(139, 92, 246, 0.06);">
+            <div class="stat-icon" style="background: rgba(139, 92, 246, 0.18); color: #8b5cf6;">
+              <i class="fa-solid fa-scale-balanced"></i>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label" style="color: #a78bfa; font-weight: 700;">Resultado Arqueo</span>
+              <h3 class="stat-value" [ngClass]="ultimoTurnoCerrado.diferencia === 0 ? 'text-success' : (ultimoTurnoCerrado.diferencia > 0 ? 'text-warning' : 'text-danger')">
+                {{ ultimoTurnoCerrado.diferencia === 0 ? '✓ Cuadre Exacto' : ((ultimoTurnoCerrado.diferencia > 0 ? '▲ Sobrante +$' : '▼ Faltante -$') + ((ultimoTurnoCerrado.diferencia > 0 ? ultimoTurnoCerrado.diferencia : ultimoTurnoCerrado.diferencia * -1) | number:'1.2-2':'es-AR')) }}
+              </h3>
+              <span class="stat-hint">Diferencia física vs sistema</span>
+            </div>
+          </div>
+        </div>
       </div>
-      <h3>La caja se encuentra actualmente CERRADA</h3>
-      <p>
-        Para registrar cobros y transacciones de turno, es necesario realizar la apertura de caja indicando el monto inicial en efectivo.
-      </p>
-      <button class="btn-operativo-success btn-lg" (click)="abrirModalApertura()">
-        <i class="fa-solid fa-lock-open"></i>
-        <span>Iniciar Apertura de Caja</span>
-      </button>
+
+      <!-- Tarjeta informativa de Caja Cerrada con botón de apertura -->
+      <div class="card-caja-cerrada">
+        <div class="cerrada-icon-wrapper">
+          <i class="fa-solid fa-lock"></i>
+        </div>
+        <h3>La caja se encuentra actualmente CERRADA</h3>
+        <p>
+          Para registrar cobros y transacciones de turno, es necesario realizar la apertura de caja indicando el monto inicial en efectivo.
+        </p>
+        <button class="btn-operativo-success btn-lg" (click)="abrirModalApertura()">
+          <i class="fa-solid fa-lock-open"></i>
+          <span>Iniciar Apertura de Caja</span>
+        </button>
+      </div>
+
     </div>
 
   </section>
 
   <!-- ========================= -->
-  <!-- SPINNER DE CARGA          -->
+  <!-- SPINNER DE CARGA INICIAL  -->
+  <!-- Solo se muestra si aún no hay datos en memoria (cero lag en recargas) -->
   <!-- ========================= -->
-  <div *ngIf="cargando" class="loading-state">
+  <div *ngIf="cargandoEstado && !estadoActual" class="loading-state">
     <div class="spinner-custom"></div>
     <p>Cargando información de caja y turnos...</p>
   </div>
@@ -493,51 +605,56 @@
             <i class="fa-solid fa-lock"></i>
           </div>
           <div>
-            <h3>Cierre y Arqueo de Caja</h3>
-            <p>Conteo físico de efectivo y consolidación automática de medios de pago</p>
+            <h3>Cierre de Turno y Arqueo de Caja</h3>
+            <p>El cajero ingresa el conteo de gaveta; transferencias y tarjetas se calculan solas.</p>
           </div>
         </div>
 
-        <!-- Desglose Automático de Medios de Pago y Fondo Inicial -->
+        <!-- Banner Explicativo de Medios Digitales vs Efectivo -->
+        <div class="cierre-ready-banner" style="background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.25);">
+          <i class="fa-solid fa-bolt text-primary banner-icon"></i>
+          <div class="banner-text">
+            <strong style="color: #1e40af;">Medios Digitales Consolidados Automáticamente</strong>
+            <p style="color: #3b82f6;">
+              Tarjetas y transferencias se suman solas en el sistema. El cajero solo debe contar los billetes en gaveta física (Fondo Inicial + Ventas Efectivo - Egresos) e ingresar el total para verificar el cuadre.
+            </p>
+          </div>
+        </div>
+
+        <!-- Desglose de Medios Digitales (Sumados Automáticamente) -->
         <div class="desglose-pagos-grid">
           <div class="desglose-item">
-            <span class="desglose-item-label"><i class="fa-solid fa-wallet text-warning"></i> Fondo Inicial</span>
+            <span class="desglose-item-label"><i class="fa-solid fa-wallet text-warning"></i> Fondo Inicial Registrado</span>
             <span class="desglose-item-val">${{ (estadoActual?.caja?.montoInicial || 0) | number:'1.2-2':'es-AR' }}</span>
           </div>
           <div class="desglose-item">
-            <span class="desglose-item-label"><i class="fa-solid fa-money-bill-wave text-efectivo"></i> Ventas Efectivo</span>
-            <span class="desglose-item-val">${{ (estadoActual?.totalEfectivoActual || 0) | number:'1.2-2':'es-AR' }}</span>
-          </div>
-          <div class="desglose-item" *ngIf="(estadoActual?.totalEgresosEfectivoActual || 0) > 0">
-            <span class="desglose-item-label"><i class="fa-solid fa-arrow-up-from-bracket text-danger"></i> (-) Egresos Efectivo</span>
-            <span class="desglose-item-val text-danger">-${{ (estadoActual?.totalEgresosEfectivoActual || 0) | number:'1.2-2':'es-AR' }}</span>
+            <span class="desglose-item-label"><i class="fa-solid fa-credit-card text-tarjeta"></i> Tarjeta Débito</span>
+            <span class="desglose-item-val">${{ (estadoActual?.totalDebitoActual || 0) | number:'1.2-2':'es-AR' }}</span>
           </div>
           <div class="desglose-item">
-            <span class="desglose-item-label"><i class="fa-solid fa-credit-card text-tarjeta"></i> Tarjetas (Auto)</span>
-            <span class="desglose-item-val">${{ ((estadoActual?.totalDebitoActual || 0) + (estadoActual?.totalCreditoActual || 0)) | number:'1.2-2':'es-AR' }}</span>
+            <span class="desglose-item-label"><i class="fa-solid fa-credit-card text-tarjeta"></i> Tarjeta Crédito</span>
+            <span class="desglose-item-val">${{ (estadoActual?.totalCreditoActual || 0) | number:'1.2-2':'es-AR' }}</span>
           </div>
           <div class="desglose-item">
-            <span class="desglose-item-label"><i class="fa-solid fa-mobile-screen-button text-transferencia"></i> Transferencias</span>
-            <span class="desglose-item-val">${{ (estadoActual?.totalTransferenciaActual || 0) | number:'1.2-2':'es-AR' }}</span>
+            <span class="desglose-item-label"><i class="fa-solid fa-mobile-screen-button text-transferencia"></i> Transferencias Netas</span>
+            <span class="desglose-item-val">${{ totalTransferenciasNeto | number:'1.2-2':'es-AR' }}</span>
           </div>
-          <div class="desglose-item" *ngIf="(estadoActual?.totalEgresosTransferenciaActual || 0) > 0">
-            <span class="desglose-item-label"><i class="fa-solid fa-arrow-up-from-bracket text-danger"></i> (-) Egresos Transf.</span>
-            <span class="desglose-item-val text-danger">-${{ (estadoActual?.totalEgresosTransferenciaActual || 0) | number:'1.2-2':'es-AR' }}</span>
-          </div>
-          <div class="desglose-item desglose-item-total">
-            <span class="desglose-item-label"><i class="fa-solid fa-vault"></i> Efectivo Esperado en Cajón</span>
-            <span class="desglose-item-val text-warning">${{ efectivoEsperado | number:'1.2-2':'es-AR' }}</span>
+          <div class="desglose-item desglose-item-total" style="grid-column: 1 / -1;">
+            <span class="desglose-item-label"><i class="fa-solid fa-cloud-arrow-down text-info"></i> Subtotal Medios Digitales (Automático)</span>
+            <span class="desglose-item-val text-info">${{ totalDigitalNeto | number:'1.2-2':'es-AR' }}</span>
           </div>
         </div>
 
         <form [formGroup]="formCierre" (ngSubmit)="confirmarCierre()" class="modal-form">
+          <!-- Campo donde el cajero saca la cuenta e ingresa el efectivo físico -->
           <div class="form-group-custom">
-            <label class="form-label-custom">
-              Efectivo Físico Contado en el Cajón ($) <span class="required-star">*</span>
+            <label class="form-label-custom" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Efectivo Físico en Gaveta Contado por el Cajero ($) <span class="required-star">*</span></span>
+              <span class="badge-pill" style="font-size: 11px; font-weight: normal; background: rgba(16, 185, 129, 0.1); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3);">
+                Fondo Inicial + Ventas Efectivo - Egresos
+              </span>
             </label>
-            <p class="form-helper-text">
-              Cuenta los billetes físicos en el cajón de dinero. Los cobros con tarjeta y transferencia ya están sumados automáticamente.
-            </p>
+
             <div class="input-currency-wrapper">
               <span class="currency-symbol">$</span>
               <input
@@ -547,17 +664,32 @@
                 class="form-input-currency"
                 formControlName="montoEfectivo"
                 placeholder="0.00"
+                (input)="onEfectivoInput()"
                 [class.has-error]="formCierre.get('montoEfectivo')?.invalid && formCierre.get('montoEfectivo')?.touched"
+                autofocus
               />
             </div>
+
             <div *ngIf="formCierre.get('montoEfectivo')?.invalid && formCierre.get('montoEfectivo')?.touched" class="field-error-msg">
               <i class="fa-solid fa-circle-exclamation"></i>
               <span>El efectivo contado es obligatorio y no puede ser negativo.</span>
             </div>
           </div>
 
-          <!-- Balance de Arqueo en vivo -->
+          <!-- Verificación de Arqueo en vivo (Cero Lag) -->
+          <div *ngIf="!conteoIngresado" class="balance-arqueo-box balance-pendiente" style="background: rgba(107, 114, 128, 0.08); border: 1px dashed #9ca3af;">
+            <div class="balance-icon" style="color: #6b7280;">
+              <i class="fa-solid fa-calculator"></i>
+            </div>
+            <div class="balance-details">
+              <span class="balance-title" style="color: #4b5563;">Verificación de Arqueo en Tiempo Real:</span>
+              <strong class="balance-value text-muted" style="font-size: 13px;">Aguardando que el cajero cuente el dinero e ingrese el efectivo...</strong>
+              <span class="balance-sub" style="color: #6b7280;">El sistema verificará al instante si el monto coincide con lo esperado o si hay diferencias.</span>
+            </div>
+          </div>
+
           <div
+            *ngIf="conteoIngresado"
             class="balance-arqueo-box"
             [ngClass]="diferenciaEfectivo === 0 ? 'balance-exacto' : (diferenciaEfectivo > 0 ? 'balance-sobrante' : 'balance-faltante')"
           >
@@ -565,17 +697,21 @@
               <i class="fa-solid" [ngClass]="diferenciaEfectivo === 0 ? 'fa-circle-check' : (diferenciaEfectivo > 0 ? 'fa-circle-plus' : 'fa-circle-minus')"></i>
             </div>
             <div class="balance-details">
-              <span class="balance-title">Balance de Arqueo en Efectivo:</span>
+              <span class="balance-title">Verificación de Arqueo:</span>
               <strong class="balance-value">
-                {{ diferenciaEfectivo === 0 ? 'Sin diferencias (Cuadre Exacto)' : (diferenciaEfectivo > 0 ? 'Sobrante en Efectivo: +$' + (diferenciaEfectivo | number:'1.2-2':'es-AR') : 'Faltante en Efectivo: -$' + (diferenciaEfectivo * -1 | number:'1.2-2':'es-AR')) }}
+                {{ diferenciaEfectivo === 0 ? '✓ Cuadre Perfecto: Sin diferencias ($0.00)' : (diferenciaEfectivo > 0 ? '▲ Sobrante en Efectivo: +$' + (diferenciaEfectivo | number:'1.2-2':'es-AR') : '▼ Faltante en Efectivo: -$' + (diferenciaEfectivo * -1 | number:'1.2-2':'es-AR')) }}
               </strong>
               <span class="balance-sub">
-                Total Rendido Consolidado: <strong>${{ totalRendidoCalculado | number:'1.2-2':'es-AR' }}</strong> (Efectivo Contado + Pagos Digitales)
+                Efectivo Contado: <strong>${{ efectivoContado | number:'1.2-2':'es-AR' }}</strong> &bull;
+                Efectivo Teórico del Sistema: <strong>${{ efectivoEsperado | number:'1.2-2':'es-AR' }}</strong>
+              </span>
+              <span class="balance-sub" style="margin-top: 2px;">
+                Total Rendido Turno: <strong>${{ totalRendidoCalculado | number:'1.2-2':'es-AR' }}</strong> (Efectivo Contado + Medios Digitales ${{ totalDigitalNeto | number:'1.2-2':'es-AR' }})
               </span>
             </div>
           </div>
 
-          <div class="form-group-custom">
+          <div class="form-group-custom" style="margin-top: 14px;">
             <label class="form-label-custom">Observaciones de Cierre (Opcional)</label>
             <textarea
               rows="2"
@@ -589,7 +725,7 @@
             <button type="button" class="btn-modal-cancel" (click)="cerrarModalCierre()" [disabled]="procesando">
               Cancelar
             </button>
-            <button type="submit" class="btn-operativo-danger" [disabled]="formCierre.invalid || procesando">
+            <button type="submit" class="btn-operativo-danger" [disabled]="formCierre.invalid || procesando" title="Confirmar cierre con un solo clic">
               <i *ngIf="procesando" class="fa-solid fa-spinner fa-spin"></i>
               <i *ngIf="!procesando" class="fa-solid fa-lock"></i>
               <span>Confirmar Cierre de Turno</span>
@@ -775,28 +911,42 @@
             <div class="ticket-divider">--------------------------------</div>
           </div>
 
-          <!-- ARQUEO Y VALORES -->
+          <!-- ARQUEO Y VALORES CONSOLIDADOS -->
           <div class="ticket-section">
             <div class="ticket-section-title">ARQUEO Y RENDICIÓN DE VALORES</div>
             <div class="ticket-row">
-              <span>Fondo Inicial:</span>
+              <span>(+) Fondo Inicial de Apertura:</span>
               <span>${{ (comprobanteSeleccionado.montoInicial || 0) | number:'1.2-2':'es-AR' }}</span>
             </div>
             <div class="ticket-row">
-              <span>Ventas Digitales:</span>
-              <span>${{ (comprobanteSeleccionado.totalDigital || 0) | number:'1.2-2':'es-AR' }}</span>
+              <span>(+) Ventas Cobradas en Efectivo:</span>
+              <span>${{ (comprobanteSeleccionado.totalEfectivo || 0) | number:'1.2-2':'es-AR' }}</span>
             </div>
-            <div class="ticket-row" *ngIf="(comprobanteSeleccionado.totalEgresos || 0) > 0">
-              <span>(-) Egresos / Retiros:</span>
-              <span>-${{ (comprobanteSeleccionado.totalEgresos || 0) | number:'1.2-2':'es-AR' }}</span>
+            <div class="ticket-row" *ngIf="(comprobanteSeleccionado.totalEgresosEfectivo || 0) > 0">
+              <span>(-) Retiros / Egresos Efectivo:</span>
+              <span>-${{ (comprobanteSeleccionado.totalEgresosEfectivo || 0) | number:'1.2-2':'es-AR' }}</span>
             </div>
-            <div class="ticket-row ticket-row-bold" *ngIf="comprobanteSeleccionado.montoFinal !== null && comprobanteSeleccionado.montoFinal !== undefined">
-              <span>TOTAL RENDIDO:</span>
-              <span>${{ comprobanteSeleccionado.montoFinal | number:'1.2-2':'es-AR' }}</span>
+            <div class="ticket-divider-dot">................................</div>
+            <div class="ticket-row">
+              <span>Efectivo Teórico Esperado:</span>
+              <span>${{ obtenerEfectivoEsperadoTicket(comprobanteSeleccionado) | number:'1.2-2':'es-AR' }}</span>
             </div>
             <div class="ticket-row ticket-row-bold" *ngIf="comprobanteSeleccionado.diferencia !== null && comprobanteSeleccionado.diferencia !== undefined">
-              <span>BALANCE / ARQUEO:</span>
-              <span>{{ comprobanteSeleccionado.diferencia === 0 ? 'EXACTO ($0.00)' : ((comprobanteSeleccionado.diferencia > 0 ? 'SOBRANTE +$' : 'FALTANTE -$') + (comprobanteSeleccionado.diferencia | number:'1.2-2':'es-AR')) }}</span>
+              <span>EFECTIVO CONTADO EN GAVETA:</span>
+              <span>${{ obtenerEfectivoContadoTicket(comprobanteSeleccionado) | number:'1.2-2':'es-AR' }}</span>
+            </div>
+            <div class="ticket-row ticket-row-bold" *ngIf="comprobanteSeleccionado.diferencia !== null && comprobanteSeleccionado.diferencia !== undefined">
+              <span>DIFERENCIA / ARQUEO:</span>
+              <span>{{ comprobanteSeleccionado.diferencia === 0 ? 'EXACTO ($0.00)' : ((comprobanteSeleccionado.diferencia > 0 ? 'SOBRANTE +$' : 'FALTANTE -$') + ((comprobanteSeleccionado.diferencia > 0 ? comprobanteSeleccionado.diferencia : comprobanteSeleccionado.diferencia * -1) | number:'1.2-2':'es-AR')) }}</span>
+            </div>
+            <div class="ticket-divider-dot">................................</div>
+            <div class="ticket-row">
+              <span>Cobros Digitales (Tarj/Transf):</span>
+              <span>${{ obtenerCobrosDigitalesNetosTicket(comprobanteSeleccionado) | number:'1.2-2':'es-AR' }}</span>
+            </div>
+            <div class="ticket-row ticket-row-bold">
+              <span>TOTAL GENERAL RENDIDO:</span>
+              <span>${{ obtenerTotalRendidoTicket(comprobanteSeleccionado) | number:'1.2-2':'es-AR' }}</span>
             </div>
             <div class="ticket-divider">--------------------------------</div>
           </div>
@@ -808,21 +958,25 @@
             <div class="ticket-divider">--------------------------------</div>
           </div>
 
-          <!-- FIRMAS -->
+          <!-- FIRMAS (ESPACIO EN BLANCO PARA FIRMA MANUSCRITA) -->
           <div class="ticket-firmas">
             <div class="firma-box">
+              <div class="firma-espacio-blanco"></div>
               <div class="firma-line">________________________</div>
               <div class="firma-label">Firma del Cajero</div>
+              <div class="firma-aclaracion">{{ comprobanteSeleccionado.usuarioNombreCompleto || comprobanteSeleccionado.usuarioUsername || 'Cajero' }}</div>
             </div>
             <div class="firma-box">
+              <div class="firma-espacio-blanco"></div>
               <div class="firma-line">________________________</div>
               <div class="firma-label">Firma del Supervisor</div>
+              <div class="firma-aclaracion">Aclaración: ....................</div>
             </div>
           </div>
 
           <div class="ticket-footer">
             <div>Mael Especieros ERP &bull; Registro Inmutable</div>
-            <div>Impreso el {{ 'now' | date:'dd/MM/yyyy HH:mm:ss' }}</div>
+            <div>Impreso el {{ fechaImpresion | date:'dd/MM/yyyy HH:mm:ss' }}</div>
           </div>
         </div>
 

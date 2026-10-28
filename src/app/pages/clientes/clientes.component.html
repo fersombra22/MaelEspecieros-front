@@ -237,33 +237,36 @@
                   <i class="fa-solid fa-eye"></i>
                 </button>
 
-                <!-- EDITAR -->
-                <button
-                  class="btn-accion btn-editar"
-                  (click)="abrirEditar(cliente)"
-                  title="Editar cliente"
-                >
-                  <i class="fa-solid fa-pen-to-square"></i>
-                </button>
+                <!-- ACCIONES EXCLUSIVAS DE ADMINISTRADOR / ROOT -->
+                <ng-container *ngIf="isAdmin">
+                  <!-- EDITAR -->
+                  <button
+                    class="btn-accion btn-editar"
+                    (click)="abrirEditar(cliente)"
+                    title="Editar cliente"
+                  >
+                    <i class="fa-solid fa-pen-to-square"></i>
+                  </button>
 
-                <!-- ACTIVAR / DESACTIVAR -->
-                <button
-                  class="btn-accion"
-                  [ngClass]="cliente.activo ? 'btn-desactivar' : 'btn-activar'"
-                  (click)="toggleEstado(cliente)"
-                  [title]="cliente.activo ? 'Desactivar cliente' : 'Activar cliente'"
-                >
-                  <i class="fa-solid" [ngClass]="cliente.activo ? 'fa-ban' : 'fa-check'"></i>
-                </button>
+                  <!-- ACTIVAR / DESACTIVAR -->
+                  <button
+                    class="btn-accion"
+                    [ngClass]="cliente.activo ? 'btn-desactivar' : 'btn-activar'"
+                    (click)="toggleEstado(cliente)"
+                    [title]="cliente.activo ? 'Desactivar cliente' : 'Activar cliente'"
+                  >
+                    <i class="fa-solid" [ngClass]="cliente.activo ? 'fa-ban' : 'fa-check'"></i>
+                  </button>
 
-                <!-- ELIMINAR -->
-                <button
-                  class="btn-accion btn-eliminar"
-                  (click)="eliminarCliente(cliente)"
-                  title="Eliminar definitivamente"
-                >
-                  <i class="fa-solid fa-trash-can"></i>
-                </button>
+                  <!-- ELIMINAR -->
+                  <button
+                    class="btn-accion btn-eliminar"
+                    (click)="eliminarCliente(cliente)"
+                    title="Eliminar definitivamente"
+                  >
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                </ng-container>
               </div>
             </td>
           </tr>
@@ -328,6 +331,7 @@
         </button>
         <app-cliente-detail
           [cliente]="clienteDetalle"
+          [isAdmin]="isAdmin"
           (cerrar)="cerrarModalDetalle()"
           (editar)="cerrarModalDetalle(); abrirEditar($event)"
           (toggleEstado)="toggleEstado($event)"

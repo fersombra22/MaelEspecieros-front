@@ -541,3 +541,68 @@ tbody tr:last-child td {
   border-color: var(--warning) !important;
   color: var(--warning) !important;
 }
+
+/* ==================================================
+   REGLAS GLOBALES DE IMPRESIÓN (@media print)
+   Garantiza que comprobantes salgan completos, legibles
+   y sin interferencias de layouts, sidebars o fondos oscuros
+   ================================================== */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 12pt !important;
+  }
+
+  app-sidebar,
+  app-navbar,
+  app-ai-chat,
+  .no-print,
+  .btn-cerrar-modal,
+  .modal-actions-custom {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .d-flex.w-100.vh-100.overflow-hidden.bg-app,
+  .flex-grow-1.d-flex.flex-column.h-100.overflow-hidden,
+  main.content,
+  .content-wrapper {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .modal-backdrop-custom,
+  .modal-dialog-custom,
+  .modal-content-custom {
+    position: static !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  #ticket-cierre-impresion {
+    position: static !important;
+    width: 100% !important;
+    max-width: 340px !important;
+    margin: 0 auto !important;
+    padding: 10px !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+}

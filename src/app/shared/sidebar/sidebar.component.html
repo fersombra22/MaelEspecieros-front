@@ -57,7 +57,7 @@
           <span>Categorías</span>
         </a>
       </li>
-      <li>
+      <li *ngIf="usuario?.rol !== Rol.EMPLEADO">
         <a
           routerLink="/movimientos"
           routerLinkActive="active"
@@ -82,7 +82,7 @@
           <span>Nueva venta</span>
         </a>
       </li>
-      <li>
+      <li *ngIf="usuario?.rol !== Rol.EMPLEADO">
         <a
           routerLink="/ventas/historial"
           routerLinkActive="active"

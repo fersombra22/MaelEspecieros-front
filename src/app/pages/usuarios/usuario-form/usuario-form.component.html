@@ -49,7 +49,22 @@
     <div class="campo">
       <label> Contraseña </label>
 
-      <input type="password" formControlName="password" placeholder="Ingrese una contraseña" />
+      <div class="password-field-wrapper">
+        <input
+          [type]="mostrarPassword ? 'text' : 'password'"
+          formControlName="password"
+          placeholder="Ingrese una contraseña"
+        />
+        <button
+          type="button"
+          class="btn-toggle-eye"
+          (click)="mostrarPassword = !mostrarPassword"
+          [attr.title]="mostrarPassword ? 'Ocultar contraseña' : 'Ver contraseña'"
+          tabindex="-1"
+        >
+          <i class="fa-solid" [class.fa-eye]="!mostrarPassword" [class.fa-eye-slash]="mostrarPassword"></i>
+        </button>
+      </div>
 
       <small class="info" *ngIf="usuarioEditar">
         Deje este campo vacío para conservar la contraseña actual.

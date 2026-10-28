@@ -7,6 +7,7 @@ import { environment } from '../../environments/environment';
 import { LoginRequest } from '../models/login-request';
 import { ApiResponse } from '../models/api-response';
 import { LoginResponse } from '../models/login-response';
+import { Rol } from '../models/rol';
 
 export interface CambiarPasswordRequest {
   username: string;
@@ -78,6 +79,12 @@ export class AuthService {
     const usuario = this.obtenerUsuario();
 
     return usuario?.requiereCambioPassword ?? false;
+  }
+
+  esRoot(): boolean {
+    const usuario = this.obtenerUsuario();
+    if (!usuario) return false;
+    return usuario.rol === Rol.SUPER_ADMIN || usuario.username?.toLowerCase() === 'root';
   }
 
   cerrarSesion(): void {

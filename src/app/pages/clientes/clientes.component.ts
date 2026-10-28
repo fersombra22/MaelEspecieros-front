@@ -10,6 +10,8 @@ import { FormsModule } from '@angular/forms';
 import Swal from 'sweetalert2';
 
 import { ClienteService } from '../../core/services/cliente.service';
+import { AuthService } from '../../core/services/auth.service';
+import { Rol } from '../../core/models/rol';
 import { Cliente } from '../../core/models/cliente';
 import { ClienteRequest } from '../../core/models/cliente-request';
 import { ClienteFormComponent } from './cliente-form/cliente-form.component';
@@ -25,10 +27,12 @@ import { ClienteDetailComponent } from './cliente-detail/cliente-detail.componen
 })
 export class ClientesComponent implements OnInit {
   private clienteService = inject(ClienteService);
+  private authService = inject(AuthService);
   private cdr = inject(ChangeDetectorRef);
 
   clientes: Cliente[] = [];
   cargando: boolean = true;
+  isAdmin: boolean = false;
 
   // Búsqueda y Filtros
   busqueda: string = '';
@@ -52,6 +56,8 @@ export class ClientesComponent implements OnInit {
   totalInactivosCount: number = 0;
 
   ngOnInit(): void {
+    const usuario = this.authService.obtenerUsuario();
+    this.isAdmin = usuario?.rol === Rol.ADMIN || usuario?.rol === Rol.SUPER_ADMIN;
     this.cargar();
   }
 
@@ -130,6 +136,14 @@ export class ClientesComponent implements OnInit {
   }
 
   abrirEditar(cliente: Cliente): void {
+    if (!this.isAdmin) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Acción no permitida',
+        text: 'La modificación de clientes está reservada exclusivamente para Administradores y Root.',
+      });
+      return;
+    }
     this.clienteEdicion = { ...cliente };
     this.mostrarModalFormulario = true;
     this.cdr.markForCheck();
@@ -155,6 +169,14 @@ export class ClientesComponent implements OnInit {
 
   guardarCliente(request: ClienteRequest): void {
     if (this.clienteEdicion && this.clienteEdicion.id) {
+      if (!this.isAdmin) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Acción no permitida',
+          text: 'La modificación de clientes está reservada exclusivamente para Administradores y Root.',
+        });
+        return;
+      }
       // Actualizar
       this.clienteService.actualizar(this.clienteEdicion.id, request).subscribe({
         next: (resp) => {
@@ -208,6 +230,14 @@ export class ClientesComponent implements OnInit {
   }
 
   toggleEstado(cliente: Cliente): void {
+    if (!this.isAdmin) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Acción no permitida',
+        text: 'Solo Administradores y Root pueden activar o desactivar clientes.',
+      });
+      return;
+    }
     const accion = cliente.activo ? 'desactivar' : 'activar';
     const titulo = cliente.activo ? '¿Desactivar cliente?' : '¿Activar cliente?';
     const texto = cliente.activo
@@ -254,6 +284,14 @@ export class ClientesComponent implements OnInit {
   }
 
   eliminarCliente(cliente: Cliente): void {
+    if (!this.isAdmin) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Acción no permitida',
+        text: 'Solo Administradores y Root pueden eliminar clientes.',
+      });
+      return;
+    }
     Swal.fire({
       title: '¿Eliminar definitivamente?',
       text: `Se borrará el registro de ${cliente.nombre} ${cliente.apellido}. Esta acción no se puede deshacer.`,

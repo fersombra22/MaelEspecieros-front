@@ -30,6 +30,7 @@ export class UsuarioFormComponent implements OnInit {
   cancelar = new EventEmitter<void>();
 
   formulario!: FormGroup;
+  mostrarPassword: boolean = false;
 
   ngOnInit(): void {
     this.crearFormulario();

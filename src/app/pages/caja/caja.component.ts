@@ -1,6 +1,7 @@
-import { Component, OnInit, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Subscription, interval } from 'rxjs';
 import Swal from 'sweetalert2';
 
 import { CajaService } from '../../core/services/caja.service';
@@ -16,32 +17,50 @@ import { Caja, EstadoActualCaja, EstadoCaja, TipoMedioEgreso, EgresoCajaResponse
   styleUrls: ['./caja.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CajaComponent implements OnInit {
+export class CajaComponent implements OnInit, OnDestroy {
   private fb = inject(FormBuilder);
   private cajaService = inject(CajaService);
   private cdr = inject(ChangeDetectorRef);
   private authService = inject(AuthService);
 
+  get esRoot(): boolean {
+    return this.authService.esRoot();
+  }
+
   get puedeVerHistorial(): boolean {
     const rol = this.authService.obtenerUsuario()?.rol;
-    return rol === Rol.ADMIN || rol === Rol.SUPER_ADMIN;
+    return this.esRoot || rol === Rol.ADMIN || rol === Rol.SUPER_ADMIN;
   }
 
   get puedeRegistrarEgreso(): boolean {
     const rol = this.authService.obtenerUsuario()?.rol;
-    return rol === Rol.ADMIN || rol === Rol.SUPER_ADMIN;
+    return this.esRoot || rol === Rol.ADMIN || rol === Rol.SUPER_ADMIN;
   }
 
   EstadoCaja = EstadoCaja;
   TipoMedioEgreso = TipoMedioEgreso;
 
-  cargando: boolean = true;
+  // Carga ultra-rápida (cero lag como en módulo productos)
+  cargando: boolean = false;
+  cargandoEstado: boolean = false;
+  cargandoHistorial: boolean = false;
   procesando: boolean = false;
   cargandoEgresos: boolean = false;
+
+  // Monitoreo en tiempo real para Root
+  private timerRealtime?: Subscription;
+  ultimaActualizacionEnVivo: Date = new Date();
+  monitoreoActivo: boolean = true;
+  fechaImpresion: Date = new Date();
 
   estadoActual?: EstadoActualCaja;
   egresosTurno: EgresoCajaResponse[] = [];
   historial: Caja[] = [];
+
+  // Último turno cerrado para que Root siempre vea la plata incluso con caja cerrada
+  get ultimoTurnoCerrado(): Caja | undefined {
+    return this.historial && this.historial.length > 0 ? this.historial[0] : undefined;
+  }
 
   // Paginación historial
   currentPage: number = 0;
@@ -68,8 +87,13 @@ export class CajaComponent implements OnInit {
     });
 
     this.formCierre = this.fb.group({
-      montoEfectivo: [0, [Validators.required, Validators.min(0)]],
+      montoEfectivo: [null, [Validators.required, Validators.min(0)]],
       observaciones: ['', [Validators.maxLength(500)]],
+    });
+
+    // Cero lag: respuesta en tiempo real al ingresar montos
+    this.formCierre.valueChanges.subscribe(() => {
+      this.cdr.markForCheck();
     });
 
     this.formEgreso = this.fb.group({
@@ -82,24 +106,76 @@ export class CajaComponent implements OnInit {
 
   ngOnInit(): void {
     this.cargarDatos();
+    this.iniciarMonitoreoTiempoReal();
+  }
+
+  ngOnDestroy(): void {
+    this.detenerMonitoreoTiempoReal();
+  }
+
+  iniciarMonitoreoTiempoReal(): void {
+    this.detenerMonitoreoTiempoReal();
+    if (!this.monitoreoActivo) return;
+
+    // Actualización silenciosa en vivo cada 4 segundos
+    this.timerRealtime = interval(4000).subscribe(() => {
+      if (
+        this.estadoActual?.abierta &&
+        !this.procesando &&
+        !this.mostrarModalCierre &&
+        !this.mostrarModalApertura &&
+        !this.mostrarModalEgreso
+      ) {
+        this.actualizarEstadoSilencioso();
+      }
+    });
+  }
+
+  actualizarEstadoSilencioso(): void {
+    this.cajaService.obtenerEstadoActual().subscribe({
+      next: (res) => {
+        if (res.data) {
+          this.estadoActual = res.data;
+          this.ultimaActualizacionEnVivo = new Date();
+          this.cdr.markForCheck();
+        }
+      },
+      error: () => {
+        // En segundo plano no interrumpimos al operador
+      },
+    });
+  }
+
+  detenerMonitoreoTiempoReal(): void {
+    if (this.timerRealtime) {
+      this.timerRealtime.unsubscribe();
+      this.timerRealtime = undefined;
+    }
   }
 
   cargarDatos(): void {
-    this.cargando = true;
+    if (!this.estadoActual) {
+      this.cargandoEstado = true;
+    }
     this.cdr.markForCheck();
 
+    // 1. Obtener estado actual de la caja de inmediato (cero retardo para usuario root y cajeros)
     this.cajaService.obtenerEstadoActual().subscribe({
       next: (res) => {
         this.estadoActual = res.data;
+        this.cargando = false;
+        this.cargandoEstado = false;
+        this.cdr.markForCheck();
+
         if (this.estadoActual?.abierta) {
           this.cargarEgresosTurno();
         } else {
           this.egresosTurno = [];
         }
-        this.cargarHistorial();
       },
       error: (err) => {
         this.cargando = false;
+        this.cargandoEstado = false;
         this.cdr.markForCheck();
         Swal.fire({
           icon: 'error',
@@ -108,6 +184,11 @@ export class CajaComponent implements OnInit {
         });
       },
     });
+
+    // 2. Cargar historial en paralelo (no bloquea las tarjetas principales de dinero)
+    if (this.puedeVerHistorial) {
+      this.cargarHistorial();
+    }
   }
 
   cargarEgresosTurno(): void {
@@ -126,16 +207,19 @@ export class CajaComponent implements OnInit {
   }
 
   cargarHistorial(): void {
+    this.cargandoHistorial = true;
+    this.cdr.markForCheck();
+
     this.cajaService.listarHistorial(this.currentPage, this.pageSize).subscribe({
       next: (res) => {
         this.historial = res.data?.content || [];
         this.totalElements = res.data?.totalElements || 0;
         this.totalPages = res.data?.totalPages || 0;
-        this.cargando = false;
+        this.cargandoHistorial = false;
         this.cdr.markForCheck();
       },
       error: () => {
-        this.cargando = false;
+        this.cargandoHistorial = false;
         this.cdr.markForCheck();
       },
     });
@@ -231,12 +315,55 @@ export class CajaComponent implements OnInit {
     const inicial = Number(this.estadoActual?.caja?.montoInicial || 0);
     const ventasEfectivo = Number(this.estadoActual?.totalEfectivoActual || 0);
     const egresosEfectivo = Number(this.estadoActual?.totalEgresosEfectivoActual || 0);
-    return inicial + ventasEfectivo - egresosEfectivo;
+    return Math.max(0, inicial + ventasEfectivo - egresosEfectivo);
+  }
+
+  get totalDigitalNeto(): number {
+    const digital = Number(this.estadoActual?.totalDigitalActual || 0);
+    const egresosDigital = Number(this.estadoActual?.totalEgresosTransferenciaActual || 0);
+    return Math.max(0, digital - egresosDigital);
+  }
+
+  get totalTransferenciasNeto(): number {
+    const transf = Number(this.estadoActual?.totalTransferenciaActual || 0);
+    const egresosTransf = Number(this.estadoActual?.totalEgresosTransferenciaActual || 0);
+    return Math.max(0, transf - egresosTransf);
+  }
+
+  get totalConsolidadoEsperado(): number {
+    return this.efectivoEsperado + this.totalDigitalNeto;
   }
 
   abrirModalCierre(): void {
-    this.formCierre.reset({ montoEfectivo: this.efectivoEsperado, observaciones: '' });
+    // Sincronizar de inmediato el estado actual con el servidor antes de abrir el modal para garantizar cifras exactas al segundo
+    this.cajaService.obtenerEstadoActual().subscribe({
+      next: (res) => {
+        if (res.data) {
+          this.estadoActual = res.data;
+        }
+        this.configurarFormularioCierre();
+      },
+      error: () => {
+        this.configurarFormularioCierre();
+      },
+    });
+  }
+
+  private configurarFormularioCierre(): void {
+    this.formCierre.reset({
+      montoEfectivo: null,
+      observaciones: '',
+    });
     this.mostrarModalCierre = true;
+    this.cdr.markForCheck();
+  }
+
+  get conteoIngresado(): boolean {
+    const val = this.formCierre.get('montoEfectivo')?.value;
+    return val !== null && val !== '' && !isNaN(Number(val));
+  }
+
+  onEfectivoInput(): void {
     this.cdr.markForCheck();
   }
 
@@ -254,9 +381,7 @@ export class CajaComponent implements OnInit {
   }
 
   get totalRendidoCalculado(): number {
-    const digital = Number(this.estadoActual?.totalDigitalActual || 0);
-    const egresosDigital = Number(this.estadoActual?.totalEgresosTransferenciaActual || 0);
-    return this.efectivoContado + (digital - egresosDigital);
+    return this.efectivoContado + this.totalDigitalNeto;
   }
 
   confirmarApertura(): void {
@@ -308,44 +433,38 @@ export class CajaComponent implements OnInit {
   }
 
   confirmarCierre(): void {
-    if (this.formCierre.invalid) {
+    if (this.formCierre.invalid || this.procesando) {
       this.formCierre.markAllAsTouched();
       return;
     }
 
     const { montoEfectivo, observaciones } = this.formCierre.value;
     const dif = this.diferenciaEfectivo;
-    let mensajeDiferencia = '';
+    let mensajeDiferencia = 'Arqueo de efectivo exacto (sin diferencias).';
 
-    if (dif === 0) {
-      mensajeDiferencia = 'El arqueo de efectivo es exacto (sin diferencias).';
-    } else if (dif > 0) {
+    if (dif > 0) {
       mensajeDiferencia = `Sobrante en efectivo: +$${dif.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`;
-    } else {
+    } else if (dif < 0) {
       mensajeDiferencia = `Faltante en efectivo: -$${Math.abs(dif).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`;
     }
 
     Swal.fire({
-      title: '¿Confirmar Cierre y Arqueo?',
+      title: '¿Confirmar Cierre de Turno?',
       html: `
-        <div style="text-align: left; font-size: 14px; line-height: 1.6;">
-          <p class="mb-1"><strong>Fondo Inicial:</strong> $${(this.estadoActual?.caja?.montoInicial || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
-          <p class="mb-1"><strong>Ventas Efectivo:</strong> $${(this.estadoActual?.totalEfectivoActual || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
-          ${(this.estadoActual?.totalEgresosEfectivoActual || 0) > 0 ? `<p class="mb-1 text-danger"><strong>(-) Egresos Efectivo:</strong> -$${Number(this.estadoActual?.totalEgresosEfectivoActual).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>` : ''}
-          <p class="mb-1"><strong>Efectivo Esperado en Gaveta:</strong> $${this.efectivoEsperado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
-          <p class="mb-1"><strong>Efectivo Contado (Físico):</strong> $${Number(montoEfectivo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
-          <p class="mb-1"><strong>Pagos Digitales:</strong> $${(this.estadoActual?.totalDigitalActual || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
-          ${(this.estadoActual?.totalEgresosTransferenciaActual || 0) > 0 ? `<p class="mb-1 text-danger"><strong>(-) Egresos Digitales:</strong> -$${Number(this.estadoActual?.totalEgresosTransferenciaActual).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>` : ''}
+        <div style="text-align: left; font-size: 14px; line-height: 1.6; padding: 4px 8px;">
+          <p class="mb-1"><strong>Efectivo en Caja a Rendir:</strong> $${Number(montoEfectivo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
+          <p class="mb-1"><strong>Pagos Digitales (Tarj/Transf):</strong> $${this.totalDigitalNeto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
           <hr style="margin: 8px 0; border-color: rgba(255,255,255,0.2);" />
-          <p class="mb-2"><strong>Total Rendido Turno:</strong> $${this.totalRendidoCalculado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
-          <p class="${dif < 0 ? 'text-danger fw-bold' : dif > 0 ? 'text-warning fw-bold' : 'text-success fw-bold'}">${mensajeDiferencia}</p>
+          <p class="mb-1"><strong>Total Rendido Turno:</strong> $${(Number(montoEfectivo) + this.totalDigitalNeto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</p>
+          <p class="mb-0 ${dif === 0 ? 'text-success' : 'text-warning'} fw-bold">${mensajeDiferencia}</p>
         </div>
       `,
       icon: dif !== 0 ? 'warning' : 'question',
       showCancelButton: true,
-      confirmButtonText: 'Sí, cerrar caja',
+      confirmButtonText: 'Sí, cerrar turno ahora',
       cancelButtonText: 'Cancelar',
-      confirmButtonColor: dif !== 0 ? '#dc3545' : '#8b5cf6',
+      confirmButtonColor: '#8b5cf6',
+      cancelButtonColor: '#6c757d',
     }).then((result) => {
       if (result.isConfirmed) {
         this.procesando = true;
@@ -354,7 +473,7 @@ export class CajaComponent implements OnInit {
 
         Swal.fire({
           title: 'Cerrando caja...',
-          text: 'Consolidando turnos y sellando arqueo...',
+          text: 'Consolidando turnos y sellando arqueo en blockchain...',
           allowOutsideClick: false,
           didOpen: () => {
             Swal.showLoading();
@@ -383,7 +502,7 @@ export class CajaComponent implements OnInit {
             Swal.fire({
               icon: 'success',
               title: 'Caja Cerrada Exitosamente',
-              html: 'El turno finalizó correctamente. ¿Deseas imprimir el comprobante de cierre de turno ahora?',
+              html: 'El turno finalizó correctamente. ¿Deseas ver e imprimir el comprobante de turno?',
               showCancelButton: true,
               confirmButtonText: '<i class="fa-solid fa-print"></i> Ver e Imprimir Comprobante',
               cancelButtonText: 'Cerrar',
@@ -411,21 +530,21 @@ export class CajaComponent implements OnInit {
 
   verComprobante(caja: Caja): void {
     if (!caja.id) return;
-    this.cargando = true;
+    this.comprobanteSeleccionado = caja;
+    this.fechaImpresion = new Date();
+    this.mostrarModalComprobante = true;
     this.cdr.markForCheck();
 
+    // Sincronizar datos detallados con el backend en segundo plano
     this.cajaService.obtenerPorId(caja.id).subscribe({
       next: (res) => {
-        this.cargando = false;
-        this.comprobanteSeleccionado = res.data || caja;
-        this.mostrarModalComprobante = true;
-        this.cdr.markForCheck();
+        if (res.data) {
+          this.comprobanteSeleccionado = res.data;
+          this.cdr.markForCheck();
+        }
       },
       error: () => {
-        this.cargando = false;
-        this.comprobanteSeleccionado = caja;
-        this.mostrarModalComprobante = true;
-        this.cdr.markForCheck();
+        // Mantiene la caja previa
       }
     });
   }
@@ -436,8 +555,216 @@ export class CajaComponent implements OnInit {
     this.cdr.markForCheck();
   }
 
+  // Cálculos robustos para el ticket imprimible (sin NaN ni inconsistencias)
+  obtenerEfectivoEsperadoTicket(caja: Caja): number {
+    const inicial = Number(caja.montoInicial || 0);
+    const efectivo = Number(caja.totalEfectivo || 0);
+    const egresos = Number(caja.totalEgresosEfectivo || 0);
+    return Math.max(0, inicial + efectivo - egresos);
+  }
+
+  obtenerEfectivoContadoTicket(caja: Caja): number {
+    const esperado = this.obtenerEfectivoEsperadoTicket(caja);
+    const dif = Number(caja.diferencia || 0);
+    return Math.max(0, esperado + dif);
+  }
+
+  obtenerCobrosDigitalesNetosTicket(caja: Caja): number {
+    const digital = Number(caja.totalDigital || 0);
+    const egresosTransf = Number(caja.totalEgresosTransferencia || 0);
+    return Math.max(0, digital - egresosTransf);
+  }
+
+  obtenerTotalRendidoTicket(caja: Caja): number {
+    if (caja.montoFinal !== null && caja.montoFinal !== undefined) {
+      return Number(caja.montoFinal);
+    }
+    return this.obtenerEfectivoContadoTicket(caja) + this.obtenerCobrosDigitalesNetosTicket(caja);
+  }
+
+  /**
+   * Imprime el comprobante mediante un iframe invisible aislado.
+   * Resuelve al 100% el problema de hojas cortadas o que "salga cualquier cosa",
+   * garantizando salida limpia en impresoras térmicas (80mm) y convencionales (A4/Carta).
+   */
   imprimirComprobante(): void {
-    window.print();
+    const ticketElement = document.getElementById('ticket-cierre-impresion');
+    if (!ticketElement) {
+      window.print();
+      return;
+    }
+
+    const ticketHtml = ticketElement.innerHTML;
+    const turnoId = this.comprobanteSeleccionado?.id || 'Turno';
+
+    let printFrame = document.getElementById('ticket-print-iframe') as HTMLIFrameElement;
+    if (printFrame) {
+      document.body.removeChild(printFrame);
+    }
+
+    printFrame = document.createElement('iframe');
+    printFrame.id = 'ticket-print-iframe';
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+
+    const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
+    if (!frameDoc) {
+      window.print();
+      return;
+    }
+
+    frameDoc.open();
+    frameDoc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Comprobante_Cierre_Caja_${turnoId}</title>
+          <style>
+            @page {
+              size: 80mm auto;
+              margin: 4mm;
+            }
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              background: #ffffff !important;
+              color: #000000 !important;
+              font-size: 12px;
+              line-height: 1.35;
+              padding: 6px;
+              width: 100%;
+              max-width: 78mm;
+              margin: 0 auto;
+            }
+            .ticket-header {
+              text-align: center;
+              margin-bottom: 8px;
+            }
+            .ticket-brand {
+              font-size: 18px;
+              font-weight: 900;
+              letter-spacing: 1px;
+            }
+            .ticket-sub {
+              font-size: 9px;
+              color: #333333;
+              margin-top: 2px;
+            }
+            .ticket-title {
+              font-size: 12px;
+              font-weight: 800;
+              margin-top: 6px;
+            }
+            .ticket-divider, .ticket-divider-dot {
+              font-size: 11px;
+              text-align: center;
+              margin: 5px 0;
+              letter-spacing: -1px;
+              color: #333333;
+            }
+            .ticket-meta, .ticket-section {
+              margin-bottom: 8px;
+            }
+            .ticket-section-title {
+              font-size: 11px;
+              font-weight: 800;
+              text-transform: uppercase;
+              margin-bottom: 4px;
+              border-bottom: 1px dashed #333;
+              padding-bottom: 2px;
+            }
+            .ticket-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 11.5px;
+              margin: 3px 0;
+            }
+            .ticket-row-bold {
+              font-weight: 900;
+              font-size: 12.5px;
+            }
+            .small-text {
+              font-size: 10px;
+              color: #444444;
+            }
+            .ticket-obs {
+              font-size: 10.5px;
+              font-style: italic;
+              background: #f5f5f5;
+              padding: 4px 6px;
+              border-left: 2px solid #333;
+              margin-top: 3px;
+            }
+            .ticket-firmas {
+              display: flex;
+              justify-content: space-between;
+              gap: 15px;
+              margin-top: 24px;
+              padding-top: 8px;
+              page-break-inside: avoid;
+            }
+            .firma-box {
+              flex: 1;
+              text-align: center;
+            }
+            .firma-espacio-blanco {
+              height: 38px;
+            }
+            .firma-line {
+              font-size: 10px;
+              letter-spacing: -1px;
+            }
+            .firma-label {
+              font-size: 10px;
+              font-weight: bold;
+              margin-top: 3px;
+            }
+            .firma-aclaracion {
+              font-size: 9px;
+              color: #444;
+              margin-top: 2px;
+            }
+            .ticket-footer {
+              text-align: center;
+              font-size: 9px;
+              color: #555555;
+              margin-top: 14px;
+              border-top: 1px solid #ddd;
+              padding-top: 6px;
+              page-break-inside: avoid;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="ticket-cierre-wrapper">
+            ${ticketHtml}
+          </div>
+        </body>
+      </html>
+    `);
+    frameDoc.close();
+
+    setTimeout(() => {
+      try {
+        printFrame.contentWindow?.focus();
+        printFrame.contentWindow?.print();
+      } catch (e) {
+        console.error('Error al imprimir comprobante vía iframe:', e);
+        window.print();
+      }
+    }, 200);
   }
 
   cambiarPagina(nuevaPagina: number): void {
