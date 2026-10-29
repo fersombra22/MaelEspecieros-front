@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, Subject, tap } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { ApiResponse } from '../models/api-response';
 import { Page } from '../models/page';
@@ -13,16 +13,28 @@ export class CajaService {
   private http = inject(HttpClient);
   private api = `${environment.apiUrl}/caja`;
 
+  // Canal reactivo instantáneo para propagar cambios sin ningún tipo de lag
+  private cajaModificadaSubject = new Subject<void>();
+  public cajaModificada$ = this.cajaModificadaSubject.asObservable();
+
+  notificarCambio(): void {
+    this.cajaModificadaSubject.next();
+  }
+
   obtenerEstadoActual(): Observable<ApiResponse<EstadoActualCaja>> {
     return this.http.get<ApiResponse<EstadoActualCaja>>(`${this.api}/estado-actual`);
   }
 
   abrir(request: AperturaCajaRequest): Observable<ApiResponse<Caja>> {
-    return this.http.post<ApiResponse<Caja>>(`${this.api}/abrir`, request);
+    return this.http.post<ApiResponse<Caja>>(`${this.api}/abrir`, request).pipe(
+      tap(() => this.notificarCambio())
+    );
   }
 
   cerrar(request: CierreCajaRequest): Observable<ApiResponse<Caja>> {
-    return this.http.post<ApiResponse<Caja>>(`${this.api}/cerrar`, request);
+    return this.http.post<ApiResponse<Caja>>(`${this.api}/cerrar`, request).pipe(
+      tap(() => this.notificarCambio())
+    );
   }
 
   listarHistorial(page: number = 0, size: number = 10): Observable<ApiResponse<Page<Caja>>> {
@@ -37,7 +49,9 @@ export class CajaService {
   }
 
   registrarEgreso(request: EgresoCajaRequest): Observable<ApiResponse<EgresoCajaResponse>> {
-    return this.http.post<ApiResponse<EgresoCajaResponse>>(`${this.api}/egresos`, request);
+    return this.http.post<ApiResponse<EgresoCajaResponse>>(`${this.api}/egresos`, request).pipe(
+      tap(() => this.notificarCambio())
+    );
   }
 
   listarEgresosActual(): Observable<ApiResponse<EgresoCajaResponse[]>> {
@@ -48,3 +62,4 @@ export class CajaService {
     return this.http.get<ApiResponse<EgresoCajaResponse[]>>(`${this.api}/${cajaId}/egresos`);
   }
 }
+

@@ -43,7 +43,7 @@
   <section *ngIf="estadoActual" class="caja-status-section">
 
     <!-- CASO: CAJA ABIERTA -->
-    <div *ngIf="estadoActual.abierta && estadoActual.caja" class="card-caja-activa">
+    <div *ngIf="estadoActual.abierta" class="card-caja-activa">
       <!-- Barra superior de estado -->
       <div class="status-top-bar">
         <div class="status-left">
@@ -52,13 +52,13 @@
             <span>CAJA ABIERTA</span>
           </div>
           <span class="status-turno-info">
-            Turno #{{ estadoActual.caja.id }} &bull; Abierto el {{ estadoActual.caja.fechaApertura | date:'dd/MM/yyyy HH:mm' }}
+            Turno #{{ estadoActual.caja?.id || '-' }} &bull; Abierto el {{ estadoActual.caja?.fechaApertura | date:'dd/MM/yyyy HH:mm' }}
           </span>
         </div>
 
         <div class="status-right" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
           <!-- Badge tiempo real para ROOT -->
-          <div *ngIf="esRoot" class="badge-root-realtime" title="Monitoreo en vivo cada 4s para usuario Root">
+          <div *ngIf="esRoot" class="badge-root-realtime" title="Monitoreo en vivo continuo en tiempo real (1.5s) para usuario Root">
             <span class="live-dot-green pulse"></span>
             <span class="live-text-root">ROOT TIEMPO REAL</span>
             <span class="live-clock">{{ ultimaActualizacionEnVivo | date:'HH:mm:ss' }}</span>
@@ -66,7 +66,7 @@
 
           <div class="cajero-badge">
             <i class="fa-solid fa-user-circle"></i>
-            <span>{{ estadoActual.caja.usuarioNombreCompleto || estadoActual.caja.usuarioUsername || 'Cajero' }}</span>
+            <span>{{ estadoActual?.caja?.usuarioNombreCompleto || estadoActual?.caja?.usuarioUsername || 'Cajero' }}</span>
           </div>
         </div>
       </div>
@@ -81,7 +81,7 @@
           <div class="stat-info">
             <span class="stat-label">Plata Inicio en Caja</span>
             <h3 class="stat-value">
-              ${{ estadoActual.caja.montoInicial | number:'1.2-2':'es-AR' }}
+              ${{ (estadoActual.caja?.montoInicial || 0) | number:'1.2-2':'es-AR' }}
             </h3>
             <span class="stat-hint">Fondo de cambio de apertura</span>
           </div>
@@ -187,11 +187,11 @@
       </div>
 
       <!-- Observaciones de Apertura -->
-      <div *ngIf="estadoActual.caja.observaciones" class="caja-observaciones">
+      <div *ngIf="estadoActual?.caja?.observaciones" class="caja-observaciones">
         <i class="fa-solid fa-comment-dots observaciones-icon"></i>
         <div class="observaciones-content">
           <span class="observaciones-title">Observaciones de apertura:</span>
-          <p class="observaciones-text">{{ estadoActual.caja.observaciones }}</p>
+          <p class="observaciones-text">{{ estadoActual?.caja?.observaciones }}</p>
         </div>
       </div>
 
@@ -317,8 +317,8 @@
             </div>
             <div class="stat-info">
               <span class="stat-label" style="color: #a78bfa; font-weight: 700;">Resultado Arqueo</span>
-              <h3 class="stat-value" [ngClass]="ultimoTurnoCerrado.diferencia === 0 ? 'text-success' : (ultimoTurnoCerrado.diferencia > 0 ? 'text-warning' : 'text-danger')">
-                {{ ultimoTurnoCerrado.diferencia === 0 ? '✓ Cuadre Exacto' : ((ultimoTurnoCerrado.diferencia > 0 ? '▲ Sobrante +$' : '▼ Faltante -$') + ((ultimoTurnoCerrado.diferencia > 0 ? ultimoTurnoCerrado.diferencia : ultimoTurnoCerrado.diferencia * -1) | number:'1.2-2':'es-AR')) }}
+              <h3 class="stat-value" [ngClass]="diferenciaUltimoTurnoCerrado === 0 ? 'text-success' : (diferenciaUltimoTurnoCerrado > 0 ? 'text-warning' : 'text-danger')">
+                {{ diferenciaUltimoTurnoCerrado === 0 ? '✓ Cuadre Exacto' : ((diferenciaUltimoTurnoCerrado > 0 ? '▲ Sobrante +$' : '▼ Faltante -$') + ((diferenciaUltimoTurnoCerrado > 0 ? diferenciaUltimoTurnoCerrado : diferenciaUltimoTurnoCerrado * -1) | number:'1.2-2':'es-AR')) }}
               </h3>
               <span class="stat-hint">Diferencia física vs sistema</span>
             </div>

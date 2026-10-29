@@ -373,6 +373,7 @@ export class VentasComponent implements OnInit {
 
     this.ventaService.crear(request).subscribe({
       next: (response: any) => {
+        this.cajaService.notificarCambio();
         Swal.fire({
           icon: 'success',
           title: 'Venta exitosa',

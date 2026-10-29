@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Subscription, interval } from 'rxjs';
@@ -15,13 +15,14 @@ import { Caja, EstadoActualCaja, EstadoCaja, TipoMedioEgreso, EgresoCajaResponse
   imports: [CommonModule, ReactiveFormsModule],
   templateUrl: './caja.component.html',
   styleUrls: ['./caja.component.css'],
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CajaComponent implements OnInit, OnDestroy {
   private fb = inject(FormBuilder);
   private cajaService = inject(CajaService);
   private cdr = inject(ChangeDetectorRef);
+  private ngZone = inject(NgZone);
   private authService = inject(AuthService);
+
 
   get esRoot(): boolean {
     return this.authService.esRoot();
@@ -49,6 +50,7 @@ export class CajaComponent implements OnInit, OnDestroy {
 
   // Monitoreo en tiempo real para Root
   private timerRealtime?: Subscription;
+  private subCajaModificada?: Subscription;
   ultimaActualizacionEnVivo: Date = new Date();
   monitoreoActivo: boolean = true;
   fechaImpresion: Date = new Date();
@@ -60,6 +62,10 @@ export class CajaComponent implements OnInit, OnDestroy {
   // Último turno cerrado para que Root siempre vea la plata incluso con caja cerrada
   get ultimoTurnoCerrado(): Caja | undefined {
     return this.historial && this.historial.length > 0 ? this.historial[0] : undefined;
+  }
+
+  get diferenciaUltimoTurnoCerrado(): number {
+    return Number(this.ultimoTurnoCerrado?.diferencia || 0);
   }
 
   // Paginación historial
@@ -93,7 +99,7 @@ export class CajaComponent implements OnInit, OnDestroy {
 
     // Cero lag: respuesta en tiempo real al ingresar montos
     this.formCierre.valueChanges.subscribe(() => {
-      this.cdr.markForCheck();
+      this.cdr.detectChanges();
     });
 
     this.formEgreso = this.fb.group({
@@ -117,10 +123,14 @@ export class CajaComponent implements OnInit, OnDestroy {
     this.detenerMonitoreoTiempoReal();
     if (!this.monitoreoActivo) return;
 
-    // Actualización silenciosa en vivo cada 4 segundos
-    this.timerRealtime = interval(4000).subscribe(() => {
+    // 1. Canal reactivo para actualizarse al instante si se produce una venta o movimiento en la app
+    this.subCajaModificada = this.cajaService.cajaModificada$.subscribe(() => {
+      this.actualizarEstadoSilencioso();
+    });
+
+    // 2. Monitoreo constante en vivo cada 1.5 segundos (tiempo real genuino, sin exigir clicks ni mover el mouse)
+    this.timerRealtime = interval(1500).subscribe(() => {
       if (
-        this.estadoActual?.abierta &&
         !this.procesando &&
         !this.mostrarModalCierre &&
         !this.mostrarModalApertura &&
@@ -135,9 +145,29 @@ export class CajaComponent implements OnInit, OnDestroy {
     this.cajaService.obtenerEstadoActual().subscribe({
       next: (res) => {
         if (res.data) {
+          const antesAbierta = this.estadoActual?.abierta;
+          const ahoraAbierta = res.data.abierta;
           this.estadoActual = res.data;
           this.ultimaActualizacionEnVivo = new Date();
-          this.cdr.markForCheck();
+
+          if (ahoraAbierta) {
+            this.cajaService.listarEgresosActual().subscribe({
+              next: (egr) => {
+                this.egresosTurno = egr.data || [];
+                this.cdr.detectChanges();
+              },
+              error: () => {
+                this.cdr.detectChanges();
+              }
+            });
+          } else {
+            this.egresosTurno = [];
+            if (antesAbierta === true && !ahoraAbierta && this.puedeVerHistorial) {
+              this.cargarHistorial();
+            }
+          }
+
+          this.cdr.detectChanges();
         }
       },
       error: () => {
@@ -151,13 +181,17 @@ export class CajaComponent implements OnInit, OnDestroy {
       this.timerRealtime.unsubscribe();
       this.timerRealtime = undefined;
     }
+    if (this.subCajaModificada) {
+      this.subCajaModificada.unsubscribe();
+      this.subCajaModificada = undefined;
+    }
   }
 
   cargarDatos(): void {
     if (!this.estadoActual) {
       this.cargandoEstado = true;
     }
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
 
     // 1. Obtener estado actual de la caja de inmediato (cero retardo para usuario root y cajeros)
     this.cajaService.obtenerEstadoActual().subscribe({
@@ -165,18 +199,19 @@ export class CajaComponent implements OnInit, OnDestroy {
         this.estadoActual = res.data;
         this.cargando = false;
         this.cargandoEstado = false;
-        this.cdr.markForCheck();
+        this.ultimaActualizacionEnVivo = new Date();
 
         if (this.estadoActual?.abierta) {
           this.cargarEgresosTurno();
         } else {
           this.egresosTurno = [];
         }
+        this.cdr.detectChanges();
       },
       error: (err) => {
         this.cargando = false;
         this.cargandoEstado = false;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
         Swal.fire({
           icon: 'error',
           title: 'Error de conexión',
@@ -197,18 +232,18 @@ export class CajaComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.egresosTurno = res.data || [];
         this.cargandoEgresos = false;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
       },
       error: () => {
         this.cargandoEgresos = false;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
       }
     });
   }
 
   cargarHistorial(): void {
     this.cargandoHistorial = true;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
 
     this.cajaService.listarHistorial(this.currentPage, this.pageSize).subscribe({
       next: (res) => {
@@ -216,11 +251,11 @@ export class CajaComponent implements OnInit, OnDestroy {
         this.totalElements = res.data?.totalElements || 0;
         this.totalPages = res.data?.totalPages || 0;
         this.cargandoHistorial = false;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
       },
       error: () => {
         this.cargandoHistorial = false;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
       },
     });
   }
@@ -228,12 +263,12 @@ export class CajaComponent implements OnInit, OnDestroy {
   abrirModalApertura(): void {
     this.formApertura.reset({ montoInicial: 0, observaciones: '' });
     this.mostrarModalApertura = true;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   cerrarModalApertura(): void {
     this.mostrarModalApertura = false;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   abrirModalEgreso(): void {
@@ -252,12 +287,12 @@ export class CajaComponent implements OnInit, OnDestroy {
       comprobante: '',
     });
     this.mostrarModalEgreso = true;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   cerrarModalEgreso(): void {
     this.mostrarModalEgreso = false;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   confirmarEgreso(): void {
@@ -304,7 +339,7 @@ export class CajaComponent implements OnInit, OnDestroy {
               title: 'No se pudo registrar el egreso',
               text: err.error?.message || 'Error al procesar la salida de caja.',
             });
-            this.cdr.markForCheck();
+            this.cdr.detectChanges();
           },
         });
       }
@@ -355,7 +390,7 @@ export class CajaComponent implements OnInit, OnDestroy {
       observaciones: '',
     });
     this.mostrarModalCierre = true;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   get conteoIngresado(): boolean {
@@ -364,12 +399,12 @@ export class CajaComponent implements OnInit, OnDestroy {
   }
 
   onEfectivoInput(): void {
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   cerrarModalCierre(): void {
     this.mostrarModalCierre = false;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   get efectivoContado(): number {
@@ -403,7 +438,7 @@ export class CajaComponent implements OnInit, OnDestroy {
     }).then((result) => {
       if (result.isConfirmed) {
         this.procesando = true;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
 
         this.cajaService.abrir({ montoInicial: Number(montoInicial), observaciones }).subscribe({
           next: () => {
@@ -420,7 +455,7 @@ export class CajaComponent implements OnInit, OnDestroy {
           },
           error: (err) => {
             this.procesando = false;
-            this.cdr.markForCheck();
+            this.cdr.detectChanges();
             Swal.fire({
               icon: 'error',
               title: 'No se pudo abrir la caja',
@@ -469,7 +504,7 @@ export class CajaComponent implements OnInit, OnDestroy {
       if (result.isConfirmed) {
         this.procesando = true;
         this.mostrarModalCierre = false;
-        this.cdr.markForCheck();
+        this.cdr.detectChanges();
 
         Swal.fire({
           title: 'Cerrando caja...',
@@ -497,7 +532,7 @@ export class CajaComponent implements OnInit, OnDestroy {
             };
             this.currentPage = 0;
             this.cargarHistorial();
-            this.cdr.markForCheck();
+            this.cdr.detectChanges();
 
             Swal.fire({
               icon: 'success',
@@ -516,7 +551,7 @@ export class CajaComponent implements OnInit, OnDestroy {
           error: (err) => {
             this.procesando = false;
             this.mostrarModalCierre = true;
-            this.cdr.markForCheck();
+            this.cdr.detectChanges();
             Swal.fire({
               icon: 'error',
               title: 'Error al cerrar caja',
@@ -533,14 +568,14 @@ export class CajaComponent implements OnInit, OnDestroy {
     this.comprobanteSeleccionado = caja;
     this.fechaImpresion = new Date();
     this.mostrarModalComprobante = true;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
 
     // Sincronizar datos detallados con el backend en segundo plano
     this.cajaService.obtenerPorId(caja.id).subscribe({
       next: (res) => {
         if (res.data) {
           this.comprobanteSeleccionado = res.data;
-          this.cdr.markForCheck();
+          this.cdr.detectChanges();
         }
       },
       error: () => {
@@ -552,30 +587,34 @@ export class CajaComponent implements OnInit, OnDestroy {
   cerrarModalComprobante(): void {
     this.mostrarModalComprobante = false;
     this.comprobanteSeleccionado = null;
-    this.cdr.markForCheck();
+    this.cdr.detectChanges();
   }
 
   // Cálculos robustos para el ticket imprimible (sin NaN ni inconsistencias)
-  obtenerEfectivoEsperadoTicket(caja: Caja): number {
+  obtenerEfectivoEsperadoTicket(caja?: Caja | null): number {
+    if (!caja) return 0;
     const inicial = Number(caja.montoInicial || 0);
     const efectivo = Number(caja.totalEfectivo || 0);
     const egresos = Number(caja.totalEgresosEfectivo || 0);
     return Math.max(0, inicial + efectivo - egresos);
   }
 
-  obtenerEfectivoContadoTicket(caja: Caja): number {
+  obtenerEfectivoContadoTicket(caja?: Caja | null): number {
+    if (!caja) return 0;
     const esperado = this.obtenerEfectivoEsperadoTicket(caja);
     const dif = Number(caja.diferencia || 0);
     return Math.max(0, esperado + dif);
   }
 
-  obtenerCobrosDigitalesNetosTicket(caja: Caja): number {
+  obtenerCobrosDigitalesNetosTicket(caja?: Caja | null): number {
+    if (!caja) return 0;
     const digital = Number(caja.totalDigital || 0);
     const egresosTransf = Number(caja.totalEgresosTransferencia || 0);
     return Math.max(0, digital - egresosTransf);
   }
 
-  obtenerTotalRendidoTicket(caja: Caja): number {
+  obtenerTotalRendidoTicket(caja?: Caja | null): number {
+    if (!caja) return 0;
     if (caja.montoFinal !== null && caja.montoFinal !== undefined) {
       return Number(caja.montoFinal);
     }
